@@ -9,7 +9,7 @@ Use Python 3.12 and curl from the project folder. The first download is about 1.
 ```bash
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -p test_ranking.py -v
 .venv/bin/python esci.py download
 .venv/bin/python esci.py prepare
 .venv/bin/python baseline.py
@@ -21,6 +21,21 @@ The dataset summary is in `data/esci-us-small/manifest.json`. The validation sco
 
 The first run scored **0.683883 nDCG at 10** across 3,071 validation queries. That is the score for the next model to beat.
 
+## Train the ranker
+
+The ranker reads the query and product title together. It starts from a small [TinyBERT ranking model](https://huggingface.co/cross-encoder/ms-marco-TinyBERT-L2-v2). During training it sees two titles for the same query and learns to give the more relevant one a higher score.
+
+```bash
+.venv/bin/python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python -m pip install -r requirements-ranker.txt
+.venv/bin/python -m unittest discover -s tests -v
+HF_HUB_DISABLE_XET=1 .venv/bin/python -u train_ranker.py --device cpu
+```
+
+Look in `artifacts/esci-tinybert-v1` for the saved model and `metrics.json`. The report compares BM25, the pretrained model, and the tuned model on the same validation queries. It also counts how many queries improved or got worse.
+
+On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One epoch on 15,000 comparisons raised it to **0.717436**. The final test results are still pending.
+
 ## What comes next
 
-Train a compact model on the same data and measure what improves. Then add a Go service that batches requests, tracks latency, and checks a candidate model before it replaces the current version.
+Export the model for inference, then build a Go service that batches requests, tracks latency, and evaluates a candidate model before release.
