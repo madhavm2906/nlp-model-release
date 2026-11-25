@@ -5,7 +5,8 @@ from threading import Event, Lock, Thread
 
 import uvicorn
 
-from release_store import active_release, connect
+from release_dashboard import dashboard_router
+from release_store import active_release, connect, initialize
 from serve_ranker import Ranker, create_app
 
 logger = logging.getLogger("uvicorn.error")
@@ -54,15 +55,23 @@ class LiveRanker:
 
 def main():
     parser = argparse.ArgumentParser(description="Serve the current PostgreSQL model release.")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--artifacts", type=Path, default=Path("artifacts"))
+    parser.add_argument("--bootstrap-bundle", type=Path)
     args = parser.parse_args()
     if args.threads < 1:
         parser.error("--threads must be positive")
+    if args.bootstrap_bundle is not None:
+        with connect() as db:
+            initialize(db, args.bootstrap_bundle, keep_existing=True)
     live = LiveRanker(args.threads)
+    app = create_app(live.current)
+    app.include_router(dashboard_router(args.artifacts, live.current))
     live.thread.start()
     try:
-        uvicorn.run(create_app(live.current), host="127.0.0.1", port=args.port, access_log=False)
+        uvicorn.run(app, host=args.host, port=args.port, access_log=False)
     finally:
         live.stopped.set()
         live.thread.join(timeout=2)

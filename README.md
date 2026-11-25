@@ -46,57 +46,32 @@ On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One e
 
 The export saves the model and tokenizer in `artifacts/esci-tinybert-v1-onnx`. It checks the scores and ranking quality against PyTorch on the full validation split. The benchmark records CPU latency and throughput for batches of 1, 8, and 32 pairs. It measures model execution after warmup. Tokenization and network time are outside that measurement.
 
-## Serve the model
+## Run the release dashboard
 
-Install the worker dependencies and run the tests with Go 1.22 or newer.
-
-```bash
-.venv/bin/python -m pip install -r requirements-serving.txt
-.venv/bin/python -m unittest discover -s tests -p test_serving.py -v
-go test ./...
-```
-
-Start the worker in one terminal and run `go run ./cmd/gateway` in another.
+After exporting the model, start the stack from the project folder with Docker Compose installed.
 
 ```bash
-.venv/bin/python serve_ranker.py
+bash scripts/release.sh start
 ```
 
-The gateway ranks candidates at `POST /rank` on port 8082. It combines small requests into one worker call, limits how many requests can wait, and skips expired work before scoring. The worker checks the model files when it starts. The response includes the model version, the total pairs scored in the batch, and the time spent waiting and scoring.
+Open [the release dashboard](http://127.0.0.1:8084/). It shows the model serving requests, the candidate check, the held out results, and the release history. Use **Rank products** to send a query to the Go gateway. The gateway combines requests into batches and reports queue time and worker time separately.
 
-```bash
-.venv/bin/python bench_gateway.py --requests 160 --concurrency 16
-```
-
-The benchmark uses shopping queries from validation and reports HTTP latency, queue time, throughput, and errors. To measure the same workload without batching, restart the gateway with `-batch-wait=0`.
+Use `bash scripts/release.sh status` to check the services, `bash scripts/release.sh logs` to see recent output, and `bash scripts/release.sh stop` when you are done.
 
 ## Check and manage a release
 
-Build the compressed INT8 candidate and compare it with the current model on the same validation data and request workload.
+Install the release dependencies, set the local database connection, and compare the current model with the INT8 candidate.
 
 ```bash
+.venv/bin/python -m pip install -r requirements-release.txt
+export RELEASE_DATABASE_URL="postgresql://ranker:$(cat artifacts/release-db-password)@127.0.0.1:5544/model_release"
 .venv/bin/python make_int8.py
 .venv/bin/python release_check.py
 ```
 
 The check writes `artifacts/int8-release-check.json`. A candidate can advance if its ranking score falls by at most 0.003, its median HTTP p95 grows by at most 10%, and all requests succeed. On my WSL run, INT8 passed the quality check but missed the latency limit, so FP32 stayed active.
 
-To manage the active model, start PostgreSQL and register the FP32 bundle. Run these from the project folder with Docker Compose installed.
-
-```bash
-.venv/bin/python -m pip install -r requirements-release.txt
-mkdir -p artifacts
-if [[ ! -s artifacts/release-db-password ]]; then
-    (umask 077; .venv/bin/python -c 'import secrets; print(secrets.token_hex(24))' > artifacts/release-db-password)
-fi
-export RELEASE_DB_PASSWORD="$(cat artifacts/release-db-password)"
-export RELEASE_DATABASE_URL="postgresql://ranker:$RELEASE_DB_PASSWORD@127.0.0.1:5544/model_release"
-docker compose -f compose.release.yaml up -d --wait
-.venv/bin/python model_release.py init
-.venv/bin/python serve_release.py --port 8002
-```
-
-Point the gateway at the managed worker by running `go run ./cmd/gateway -listen 127.0.0.1:8083 -worker http://127.0.0.1:8002/score` in a second terminal. In a terminal with `RELEASE_DATABASE_URL` set, use `model_release.py status` to see the selected version. Use `model_release.py promote --bundle PATH --report REPORT` with a passing report and `model_release.py rollback` to restore the previous version. Run those commands with `.venv/bin/python`. The worker verifies and loads the selected model while continuing to serve requests.
+Run `model_release.py status` to see the selected version. Use `model_release.py promote --bundle PATH --report REPORT` with a passing report and `model_release.py rollback` to restore the previous version. Run these commands with `.venv/bin/python`. PostgreSQL records each change and the worker checks the selected bundle before loading it.
 
 ## Evaluate the final release
 
@@ -108,4 +83,4 @@ HF_HUB_DISABLE_XET=1 .venv/bin/python -u evaluate_test.py
 
 The command checks the dataset and selected model, then compares the current release with BM25 and pretrained TinyBERT. It writes `artifacts/final-test-report.json` with ranking scores, how often an exact match ranks first, and a confidence interval for each gain. These results describe ranking the products provided for each query.
 
-On 8,956 test queries, BM25 scored **0.690637**, pretrained TinyBERT scored **0.710416**, and the FP32 release scored **0.718221** in nDCG at 10. The release put an exact match first on **66.85%** of queries that had one.
+On my WSL run over 8,956 test queries, BM25 scored **0.690637**, pretrained TinyBERT scored **0.710407**, and the FP32 release scored **0.718221** in nDCG at 10. The release put an exact match first on **66.85%** of queries that had one.

@@ -44,9 +44,8 @@ def record(db, action, version, bundle, prior=None, evidence=None):
     return active_release(db)
 
 
-def initialize(db, bundle):
+def initialize(db, bundle, *, keep_existing=False):
     bundle = bundle.resolve()
-    _, version = bundle_manifest(bundle)
     lock_releases(db)
     db.execute("""
         CREATE TABLE IF NOT EXISTS release_events (
@@ -61,6 +60,9 @@ def initialize(db, bundle):
         )
     """)
     current = latest(db)
+    if current is not None and keep_existing:
+        return current
+    _, version = bundle_manifest(bundle)
     if current is not None:
         if current["version"] != version:
             raise ValueError("A different model is already active. Use a release report to promote.")

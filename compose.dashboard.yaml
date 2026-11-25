@@ -1,0 +1,58 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: worker
+    environment:
+      RELEASE_DATABASE_URL: postgresql://ranker:${RELEASE_DB_PASSWORD:?Set RELEASE_DB_PASSWORD first}@release-db:5432/model_release
+    command: ["python", "serve_release.py", "--host", "0.0.0.0", "--port", "8001", "--artifacts", "${RELEASE_ARTIFACTS_DIR:?Set RELEASE_ARTIFACTS_DIR}", "--bootstrap-bundle", "${RELEASE_ARTIFACTS_DIR:?Set RELEASE_ARTIFACTS_DIR}/esci-tinybert-v1-onnx"]
+    volumes:
+      - type: bind
+        source: ${RELEASE_ARTIFACTS_DIR:?Set RELEASE_ARTIFACTS_DIR}
+        target: ${RELEASE_ARTIFACTS_DIR:?Set RELEASE_ARTIFACTS_DIR}
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      release-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8001/healthz', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: gateway
+    command: ["-listen", "0.0.0.0:8082", "-worker", "http://worker:8001/score"]
+    depends_on:
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: dashboard
+    ports:
+      - "127.0.0.1:8084:8080"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 3s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
