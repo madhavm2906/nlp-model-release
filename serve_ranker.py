@@ -81,12 +81,13 @@ class Ranker:
         return scores.tolist()
 
 
-def create_app(ranker):
+def create_app(get_ranker):
     app = FastAPI(title="ONNX ranking worker")
     scoring = Lock()
 
     @app.get("/healthz")
     def health():
+        ranker = get_ranker()
         return {"status": "ok", "model_version": ranker.version}
 
     @app.post("/score")
@@ -94,6 +95,7 @@ def create_app(ranker):
         if not scoring.acquire(blocking=False):
             raise HTTPException(status_code=503, detail="Scoring worker is busy")
         try:
+            ranker = get_ranker()
             scores = ranker.score(request.pairs)
         except ValueError as exc:
             raise HTTPException(status_code=500, detail="Invalid inference result") from exc
@@ -117,7 +119,7 @@ def main():
         ranker = Ranker(args.bundle, args.threads)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SystemExit(f"Could not load ONNX bundle: {exc}") from exc
-    uvicorn.run(create_app(ranker), host=args.host, port=args.port, access_log=False)
+    uvicorn.run(create_app(lambda: ranker), host=args.host, port=args.port, access_log=False)
 
 
 if __name__ == "__main__":

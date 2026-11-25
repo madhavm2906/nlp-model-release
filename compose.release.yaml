@@ -1,0 +1,19 @@
+services:
+  release-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ranker
+      POSTGRES_DB: model_release
+      POSTGRES_PASSWORD: ${RELEASE_DB_PASSWORD:?Set RELEASE_DB_PASSWORD first}
+    ports:
+      - "127.0.0.1:5544:5432"
+    volumes:
+      - release-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "ranker", "-d", "model_release"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  release-data:

@@ -1,0 +1,3 @@
+-r requirements.txt
+-r requirements-serving.txt
+psycopg[binary]==3.2.13

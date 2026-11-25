@@ -52,7 +52,7 @@ Install the worker dependencies and run the tests with Go 1.22 or newer.
 
 ```bash
 .venv/bin/python -m pip install -r requirements-serving.txt
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -p test_serving.py -v
 go test ./...
 ```
 
@@ -70,6 +70,30 @@ The gateway ranks candidates at `POST /rank` on port 8082. It combines small req
 
 The benchmark uses shopping queries from validation and reports HTTP latency, queue time, throughput, and errors. To measure the same workload without batching, restart the gateway with `-batch-wait=0`.
 
-## What comes next
+## Check and manage a release
 
-Compare two model versions under the same traffic, then add the checks for promoting and rolling back a release.
+Build the compressed INT8 candidate and compare it with the current model on the same validation data and request workload.
+
+```bash
+.venv/bin/python make_int8.py
+.venv/bin/python release_check.py
+```
+
+The check writes `artifacts/int8-release-check.json`. A candidate can advance if its ranking score falls by at most 0.003, its median HTTP p95 grows by at most 10%, and all requests succeed. On my WSL run, INT8 passed the quality check but missed the latency limit, so FP32 stayed active.
+
+To manage the active model, start PostgreSQL and register the FP32 bundle. Run these from the project folder with Docker Compose installed.
+
+```bash
+.venv/bin/python -m pip install -r requirements-release.txt
+mkdir -p artifacts
+if [[ ! -s artifacts/release-db-password ]]; then
+    (umask 077; .venv/bin/python -c 'import secrets; print(secrets.token_hex(24))' > artifacts/release-db-password)
+fi
+export RELEASE_DB_PASSWORD="$(cat artifacts/release-db-password)"
+export RELEASE_DATABASE_URL="postgresql://ranker:$RELEASE_DB_PASSWORD@127.0.0.1:5544/model_release"
+docker compose -f compose.release.yaml up -d --wait
+.venv/bin/python model_release.py init
+.venv/bin/python serve_release.py --port 8002
+```
+
+Point the gateway at the managed worker by running `go run ./cmd/gateway -listen 127.0.0.1:8083 -worker http://127.0.0.1:8002/score` in a second terminal. In a terminal with `RELEASE_DATABASE_URL` set, use `model_release.py status` to see the selected version. Use `model_release.py promote --bundle PATH --report REPORT` with a passing report and `model_release.py rollback` to restore the previous version. Run those commands with `.venv/bin/python`. The worker verifies and loads the selected model while continuing to serve requests.
