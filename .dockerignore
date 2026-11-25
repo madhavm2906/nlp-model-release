@@ -6,6 +6,11 @@
 !release_store.py
 !serve_release.py
 !serve_ranker.py
+!benchmark_job.py
+!bench_gateway.py
+!release_replay.py
+!esci.py
+!esci_source.json
 !go.mod
 !cmd/
 !cmd/gateway/

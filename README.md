@@ -84,3 +84,15 @@ HF_HUB_DISABLE_XET=1 .venv/bin/python -u evaluate_test.py
 The command checks the dataset and selected model, then compares the current release with BM25 and pretrained TinyBERT. It writes `artifacts/final-test-report.json` with ranking scores, how often an exact match ranks first, and a confidence interval for each gain. These results describe ranking the products provided for each query.
 
 On my WSL run over 8,956 test queries, BM25 scored **0.690637**, pretrained TinyBERT scored **0.710407**, and the FP32 release scored **0.718221** in nDCG at 10. The release put an exact match first on **66.85%** of queries that had one.
+
+## Run the benchmark in Kubernetes
+
+After exporting the model and installing the release dependencies, run this with Docker, kind, and kubectl available.
+
+```bash
+bash scripts/kube-benchmark.sh
+```
+
+The script loads a local image into kind and runs the Go gateway and ONNX worker inside one Job pod. It checks the model and validation data before replaying three rounds of 160 requests. The report and logs are saved in `artifacts/` with the Job name. The timings describe requests inside that pod.
+
+In my WSL run, all 480 measured requests succeeded. The median p95 response time across the three rounds was **71.40 ms**. To save the report from an existing Job, run `bash scripts/kube-benchmark.sh --collect JOB_NAME` with its name.

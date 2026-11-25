@@ -16,6 +16,13 @@ COPY --from=go-build /gateway /gateway
 USER 65532:65532
 ENTRYPOINT ["/gateway"]
 
+FROM worker AS benchmark
+COPY --from=go-build /gateway /usr/local/bin/gateway
+COPY benchmark_job.py bench_gateway.py release_replay.py esci.py esci_source.json ./
+COPY --from=benchmark_inputs --chown=65532:65532 . /inputs/
+USER 65532:65532
+ENTRYPOINT ["python", "benchmark_job.py", "--gateway", "/usr/local/bin/gateway", "--bundle", "/inputs/bundle", "--snapshot", "/inputs/snapshot"]
+
 FROM node:24-bookworm-slim AS frontend-build
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
