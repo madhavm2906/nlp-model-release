@@ -28,7 +28,7 @@ The ranker reads the query and product title together. It starts from a small [T
 ```bash
 .venv/bin/python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 .venv/bin/python -m pip install -r requirements-ranker.txt
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -p 'test*rank*.py' -v
 HF_HUB_DISABLE_XET=1 .venv/bin/python -u train_ranker.py --device cpu
 ```
 
@@ -36,6 +36,16 @@ Look in `artifacts/esci-tinybert-v1` for the saved model and `metrics.json`. The
 
 On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One epoch on 15,000 comparisons raised it to **0.717436**. The final test results are still pending.
 
+## Export and measure inference
+
+```bash
+.venv/bin/python -m pip install -r requirements-onnx.txt
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -u export_onnx.py
+```
+
+The export saves the model and tokenizer in `artifacts/esci-tinybert-v1-onnx`. It checks the scores and ranking quality against PyTorch on the full validation split. The benchmark records CPU latency and throughput for batches of 1, 8, and 32 pairs. It measures model execution after warmup. Tokenization and network time are outside that measurement.
+
 ## What comes next
 
-Export the model for inference, then build a Go service that batches requests, tracks latency, and evaluates a candidate model before release.
+Build a Go service that batches requests, tracks latency, and evaluates a candidate model before release.
