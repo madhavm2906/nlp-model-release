@@ -34,7 +34,7 @@ HF_HUB_DISABLE_XET=1 .venv/bin/python -u train_ranker.py --device cpu
 
 Look in `artifacts/esci-tinybert-v1` for the saved model and `metrics.json`. The report compares BM25, the pretrained model, and the tuned model on the same validation queries. It also counts how many queries improved or got worse.
 
-On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One epoch on 15,000 comparisons raised it to **0.717436**. The final test results are still pending.
+On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One epoch on 15,000 comparisons raised it to **0.717436** on validation.
 
 ## Export and measure inference
 
@@ -97,3 +97,15 @@ docker compose -f compose.release.yaml up -d --wait
 ```
 
 Point the gateway at the managed worker by running `go run ./cmd/gateway -listen 127.0.0.1:8083 -worker http://127.0.0.1:8002/score` in a second terminal. In a terminal with `RELEASE_DATABASE_URL` set, use `model_release.py status` to see the selected version. Use `model_release.py promote --bundle PATH --report REPORT` with a passing report and `model_release.py rollback` to restore the previous version. Run those commands with `.venv/bin/python`. The worker verifies and loads the selected model while continuing to serve requests.
+
+## Evaluate the final release
+
+With the release database running and `RELEASE_DATABASE_URL` set, run the official ESCI test comparison.
+
+```bash
+HF_HUB_DISABLE_XET=1 .venv/bin/python -u evaluate_test.py
+```
+
+The command checks the dataset and selected model, then compares the current release with BM25 and pretrained TinyBERT. It writes `artifacts/final-test-report.json` with ranking scores, how often an exact match ranks first, and a confidence interval for each gain. These results describe ranking the products provided for each query.
+
+On 8,956 test queries, BM25 scored **0.690637**, pretrained TinyBERT scored **0.710416**, and the FP32 release scored **0.718221** in nDCG at 10. The release put an exact match first on **66.85%** of queries that had one.

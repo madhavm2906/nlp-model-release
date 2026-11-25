@@ -63,6 +63,13 @@ def ndcg(labels: list[str], k: int = K) -> float:
     return discounted(gains) / best if best else 0.0
 
 
+def fit_bm25(db, train: Path) -> BM25:
+    titles = db.execute("""
+        SELECT DISTINCT product_id, product_title FROM read_parquet(?)
+    """, [str(train)]).fetchall()
+    return BM25(title for _, title in titles)
+
+
 def evaluate(snapshot: Path) -> dict:
     manifest_path = snapshot / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -72,10 +79,7 @@ def evaluate(snapshot: Path) -> dict:
             raise ValueError(f"Snapshot checksum mismatch: {path}")
 
     with duckdb.connect(config={"threads": "2"}) as db:
-        titles = db.execute("""
-            SELECT DISTINCT product_id, product_title FROM read_parquet(?)
-        """, [str(train)]).fetchall()
-        model = BM25(title for _, title in titles)
+        model = fit_bm25(db, train)
         examples = db.execute("""
             SELECT query_id, query, product_id, product_title, esci_label
             FROM read_parquet(?) ORDER BY query_id, product_id
