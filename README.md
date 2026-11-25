@@ -40,12 +40,36 @@ On the first CPU run, the pretrained model scored **0.706055 nDCG at 10**. One e
 
 ```bash
 .venv/bin/python -m pip install -r requirements-onnx.txt
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -p test_onnx.py -v
 .venv/bin/python -u export_onnx.py
 ```
 
 The export saves the model and tokenizer in `artifacts/esci-tinybert-v1-onnx`. It checks the scores and ranking quality against PyTorch on the full validation split. The benchmark records CPU latency and throughput for batches of 1, 8, and 32 pairs. It measures model execution after warmup. Tokenization and network time are outside that measurement.
 
+## Serve the model
+
+Install the worker dependencies and run the tests with Go 1.22 or newer.
+
+```bash
+.venv/bin/python -m pip install -r requirements-serving.txt
+.venv/bin/python -m unittest discover -s tests -v
+go test ./...
+```
+
+Start the worker in one terminal and run `go run ./cmd/gateway` in another.
+
+```bash
+.venv/bin/python serve_ranker.py
+```
+
+The gateway ranks candidates at `POST /rank` on port 8082. It combines small requests into one worker call, limits how many requests can wait, and skips expired work before scoring. The worker checks the model files when it starts. The response includes the model version, the total pairs scored in the batch, and the time spent waiting and scoring.
+
+```bash
+.venv/bin/python bench_gateway.py --requests 160 --concurrency 16
+```
+
+The benchmark uses shopping queries from validation and reports HTTP latency, queue time, throughput, and errors. To measure the same workload without batching, restart the gateway with `-batch-wait=0`.
+
 ## What comes next
 
-Build a Go service that batches requests, tracks latency, and evaluates a candidate model before release.
+Compare two model versions under the same traffic, then add the checks for promoting and rolling back a release.
